@@ -1,0 +1,18 @@
+from django.urls import path
+from .views import (
+    DocumentUploadView,
+    DocumentListView,
+    DocumentDetailView,
+    DocumentAskView,
+    DocumentSummaryView,
+    DocumentGenerateReportView,
+)
+
+urlpatterns = [
+    path("", DocumentListView.as_view(), name="document-list"),
+    path("upload/", DocumentUploadView.as_view(), name="document-upload"),
+    path("<int:pk>/", DocumentDetailView.as_view(), name="document-detail"),
+    path("<int:pk>/ask/", DocumentAskView.as_view(), name="document-ask"),
+    path("<int:pk>/summary/", DocumentSummaryView.as_view(), name="document-summary"),
+    path("<int:pk>/generate-report/", DocumentGenerateReportView.as_view(), name="document-generate-report"),
+]
