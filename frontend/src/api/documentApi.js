@@ -3,6 +3,8 @@
  * Handles document upload, listing, details, Q&A, summarization, docx export, and deletion.
  */
 
+import { apiFetch } from './http';
+
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export async function uploadDocument(file) {
@@ -10,7 +12,7 @@ export async function uploadDocument(file) {
   formData.append('file', file);
 
   try {
-    const response = await fetch(`${API_BASE}/api/documents/upload/`, {
+    const response = await apiFetch(`${API_BASE}/api/documents/upload/`, {
       method: 'POST',
       body: formData,
     });
@@ -35,7 +37,7 @@ export async function uploadDocument(file) {
 
 export async function getDocuments() {
   try {
-    const response = await fetch(`${API_BASE}/api/documents/`);
+    const response = await apiFetch(`${API_BASE}/api/documents/`);
     const data = await response.json();
     if (!response.ok) {
       return { success: false, error: data.error || 'Failed to fetch documents' };
@@ -48,7 +50,7 @@ export async function getDocuments() {
 
 export async function getDocument(id) {
   try {
-    const response = await fetch(`${API_BASE}/api/documents/${id}/`);
+    const response = await apiFetch(`${API_BASE}/api/documents/${id}/`);
     const data = await response.json();
     if (!response.ok) {
       return { success: false, error: data.error || 'Failed to fetch document details' };
@@ -61,7 +63,7 @@ export async function getDocument(id) {
 
 export async function askDocument(id, question) {
   try {
-    const response = await fetch(`${API_BASE}/api/documents/${id}/ask/`, {
+    const response = await apiFetch(`${API_BASE}/api/documents/${id}/ask/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question }),
@@ -83,7 +85,7 @@ export async function askDocument(id, question) {
 
 export async function summarizeDocument(id) {
   try {
-    const response = await fetch(`${API_BASE}/api/documents/${id}/summary/`, {
+    const response = await apiFetch(`${API_BASE}/api/documents/${id}/summary/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -104,7 +106,7 @@ export async function summarizeDocument(id) {
 
 export async function downloadDocumentReport(id, summaryText = '', defaultFilename = 'report.docx') {
   try {
-    const response = await fetch(`${API_BASE}/api/documents/${id}/generate-report/`, {
+    const response = await apiFetch(`${API_BASE}/api/documents/${id}/generate-report/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ summary: summaryText }),
@@ -146,7 +148,7 @@ export async function downloadDocumentReport(id, summaryText = '', defaultFilena
 
 export async function deleteDocument(id) {
   try {
-    const response = await fetch(`${API_BASE}/api/documents/${id}/`, {
+    const response = await apiFetch(`${API_BASE}/api/documents/${id}/`, {
       method: 'DELETE',
     });
 

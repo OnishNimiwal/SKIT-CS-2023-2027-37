@@ -1,5 +1,6 @@
 from unittest.mock import patch, Mock
 import requests
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -7,6 +8,8 @@ from .services import ask_ollama
 
 class ChatAPITests(APITestCase):
     def setUp(self):
+        self.user = get_user_model().objects.create_user(username='tester', password='test-pass-123')
+        self.client.force_login(self.user)
         self.chat_url = reverse("chat")
 
     @patch("chat.services.requests.post")

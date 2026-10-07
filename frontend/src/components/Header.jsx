@@ -1,7 +1,7 @@
 import React from 'react';
-import { ShieldCheck, Server, Cpu, Lock, MessageSquare, FileText } from 'lucide-react';
+import { ShieldCheck, Server, Cpu, Lock, MessageSquare, FileText, Home, LogIn, LogOut, UserCircle } from 'lucide-react';
 
-export default function Header({ activeTab, onTabChange }) {
+export default function Header({ activeTab, onTabChange, user, onSignIn, onLogout }) {
   return (
     <header className="app-header">
       <div className="header-left">
@@ -14,24 +14,33 @@ export default function Header({ activeTab, onTabChange }) {
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <nav className="header-nav">
-        <button
-          className={`nav-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
-          onClick={() => onTabChange && onTabChange('chat')}
-        >
-          <MessageSquare size={16} />
-          <span>General Chat</span>
-        </button>
-        <button
-          className={`nav-tab-btn ${activeTab === 'documents' ? 'active' : ''}`}
-          onClick={() => onTabChange && onTabChange('documents')}
-        >
-          <FileText size={16} />
-          <span>Document Assistant</span>
-          <span className="nav-tab-badge">Phase 2</span>
-        </button>
-      </nav>
+      {/* Navigation Tabs (signed-in users only) */}
+      {user && (
+        <nav className="header-nav">
+          <button
+            className={`nav-tab-btn ${activeTab === 'home' ? 'active' : ''}`}
+            onClick={() => onTabChange && onTabChange('home')}
+          >
+            <Home size={16} />
+            <span>Home</span>
+          </button>
+          <button
+            className={`nav-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => onTabChange && onTabChange('chat')}
+          >
+            <MessageSquare size={16} />
+            <span>General Chat</span>
+          </button>
+          <button
+            className={`nav-tab-btn ${activeTab === 'documents' ? 'active' : ''}`}
+            onClick={() => onTabChange && onTabChange('documents')}
+          >
+            <FileText size={16} />
+            <span>Document Assistant</span>
+            <span className="nav-tab-badge">Phase 2</span>
+          </button>
+        </nav>
+      )}
 
       {/* Privacy & Compliance Badges */}
       <div className="header-badges">
@@ -49,6 +58,26 @@ export default function Header({ activeTab, onTabChange }) {
           <Cpu size={14} className="badge-icon" />
           <span>Model: <strong>Local Ollama</strong></span>
         </div>
+
+        {user ? (
+          <div className="header-user">
+            <span className="header-user-name" title={`Signed in as ${user.username}`}>
+              <UserCircle size={16} />
+              <span>{user.full_name || user.username}</span>
+            </span>
+            <button type="button" className="header-auth-btn" onClick={onLogout}>
+              <LogOut size={14} />
+              <span>Logout</span>
+            </button>
+          </div>
+        ) : (
+          onSignIn && (
+            <button type="button" className="header-auth-btn primary" onClick={onSignIn}>
+              <LogIn size={14} />
+              <span>Sign in</span>
+            </button>
+          )
+        )}
       </div>
     </header>
   );

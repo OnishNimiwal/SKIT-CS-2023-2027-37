@@ -1,10 +1,12 @@
 /** Dashboard API: usage statistics and system/model health (fetched on demand, no polling). */
 
+import { apiFetch } from './http';
+
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 async function getJson(path) {
   try {
-    const response = await fetch(`${API_BASE}${path}`);
+    const response = await apiFetch(`${API_BASE}${path}`);
     if (!response.ok) return { error: `The workbench server returned an error (${response.status}).` };
     return await response.json();
   } catch {
@@ -24,7 +26,7 @@ export function getSystemStatus() {
 /** Opt-in functional test: target 'ocr' or a model id. Loads OCR / the model and runs a tiny test. */
 export async function runDeepCheck(target) {
   try {
-    const response = await fetch(`${API_BASE}/api/dashboard/deep-check/`, {
+    const response = await apiFetch(`${API_BASE}/api/dashboard/deep-check/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ target }),
