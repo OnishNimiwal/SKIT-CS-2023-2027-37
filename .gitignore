@@ -1,0 +1,15 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets and local config
+.env
+
+# Django local data
+Backend/db.sqlite3
+Backend/media/
+Backend/vector_db/
+
+# Editor
+.vscode/

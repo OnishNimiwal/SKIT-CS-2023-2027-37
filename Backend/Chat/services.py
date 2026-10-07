@@ -1,20 +1,22 @@
-import requests
-from django.conf import settings
+from langchain_core.messages import HumanMessage
 
-def ask_ollama(message: str) -> str:
+from .graph import get_graph
+
+
+def ask_ollama(
+    message: str,
+    thread_id: str = "default",
+    doc_ids: list[str] | None = None,
+) -> dict:
     """
-    Sends a prompt to the locally running Ollama server's /api/generate endpoint.
-    Strictly uses local on-premise Ollama instance without external AI fallback.
+    Runs the question through the LangGraph RAG workflow.
+    Strictly uses the local on-premise Ollama instance without external AI fallback.
     """
-    response = requests.post(
-        f"{settings.OLLAMA_URL}/api/generate",
-        json={
-            "model": settings.OLLAMA_MODEL,
-            "prompt": message,
-            "stream": False,
-        },
-        timeout=120,
+    result = get_graph().invoke(
+        {"messages": [HumanMessage(message)], "doc_ids": doc_ids or []},
+        config={"configurable": {"thread_id": thread_id}},
     )
-    response.raise_for_status()
-    data = response.json()
-    return data.get("response", "")
+    return {
+        "answer": result["messages"][-1].content,
+        "sources": result.get("sources", []),
+    }
