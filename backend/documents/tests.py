@@ -5,6 +5,7 @@ import docx
 import requests
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -22,6 +23,8 @@ def create_sample_pdf_bytes(content: str = "This is a sample MRPL report text.")
 
 class DocumentAPITests(APITestCase):
     def setUp(self):
+        self.user = get_user_model().objects.create_user(username='tester', password='test-pass-123')
+        self.client.force_login(self.user)
         self.upload_url = reverse("document-upload")
         self.list_url = reverse("document-list")
 

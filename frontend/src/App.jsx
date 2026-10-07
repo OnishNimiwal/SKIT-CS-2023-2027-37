@@ -1,12 +1,19 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Header from './components/Header';
+import HomePage from './components/home/HomePage';
+import LoginPage from './components/auth/LoginPage';
 import ChatWindow from './components/ChatWindow';
 import MessageInput from './components/MessageInput';
 import DocumentsPage from './components/documents/DocumentsPage';
 import { sendMessage } from './api/chatApi';
+import { getCurrentUser, logout } from './api/authApi';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'documents'
+  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'chat' | 'documents'
+
+  // Auth State: undefined while checking the session, null when signed out
+  const [user, setUser] = useState(undefined);
+  const [showLogin, setShowLogin] = useState(false);
 
   // Chat State
   const [messages, setMessages] = useState([]);
@@ -55,16 +62,73 @@ export default function App() {
     }
   };
 
+  const resetSession = useCallback(() => {
+    setUser(null);
+    setMessages([]);
+    setError(null);
+    setActiveTab('home');
+  }, []);
+
+  useEffect(() => {
+    getCurrentUser().then((result) => setUser(result.authenticated ? result.user : null));
+  }, []);
+
+  // An API call came back 401/403: re-check the session and drop to the home page if it ended
+  useEffect(() => {
+    const handleExpired = async () => {
+      const result = await getCurrentUser();
+      if (!result.authenticated) resetSession();
+    };
+    window.addEventListener('auth:expired', handleExpired);
+    return () => window.removeEventListener('auth:expired', handleExpired);
+  }, [resetSession]);
+
+  const handleLoginSuccess = (loggedInUser) => {
+    setUser(loggedInUser);
+    setShowLogin(false);
+    setActiveTab('home');
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    resetSession();
+  };
+
   const handleSuggestionClick = (prompt) => {
     handleSendMessage(prompt);
   };
 
+  if (user === undefined) {
+    return (
+      <div className="app-container">
+        <div className="auth-loading">Checking session…</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="app-container">
+        <Header user={null} onSignIn={showLogin ? null : () => setShowLogin(true)} />
+        <main className="main-content">
+          {showLogin ? (
+            <LoginPage onLoginSuccess={handleLoginSuccess} onBack={() => setShowLogin(false)} />
+          ) : (
+            <HomePage user={null} onSignIn={() => setShowLogin(true)} />
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
-      <Header activeTab={activeTab} onTabChange={setActiveTab} />
+      <Header activeTab={activeTab} onTabChange={setActiveTab} user={user} onLogout={handleLogout} />
 
       <main className="main-content">
-        {activeTab === 'chat' ? (
+        {activeTab === 'home' ? (
+          <HomePage user={user} onOpenTab={setActiveTab} />
+        ) : activeTab === 'chat' ? (
           <div className="chat-layout">
             <ChatWindow
               messages={messages}

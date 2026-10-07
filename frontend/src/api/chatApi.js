@@ -3,13 +3,15 @@
  * Communicates with the local Django REST Framework backend.
  */
 
+import { apiFetch } from './http';
+
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export async function sendMessage(message) {
   const url = `${API_BASE}/api/chat/`;
 
   try {
-    const response = await fetch(url, {
+    const response = await apiFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
