@@ -56,3 +56,6 @@ frontend/dist-ssr/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Locally generated progress reports (CI archives them in weekly_reports/)
+/*_Report*.pdf
