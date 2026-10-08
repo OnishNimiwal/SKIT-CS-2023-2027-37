@@ -41,25 +41,26 @@ def get_repo_info():
     return repo_name, branch_name
 
 
-def get_git_metrics(interval="weekly"):
+def get_git_metrics(interval="weekly", end_date=None):
     """
     Parses Git commit logs.
     Supported intervals: 'weekly', 'monthly', 'final'
+    end_date: last day (inclusive) of the window; defaults to today.
     """
-    today = datetime.date.today()
+    end_date = end_date or datetime.date.today()
     # --all: include every collaborator's branch, not just the checked-out one.
     # %aN: author name normalised through .mailmap (merges duplicate identities).
     git_args = ['git', 'log', '--all', '--no-merges', '--pretty=format:COMMIT|||%h|||%aN|||%ad|||%s', '--date=short', '--numstat']
 
+    # Windows are filtered on author date below; both ends are inclusive.
     if interval == "weekly":
-        since_date = (today - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
-        git_args.append(f"--since={since_date}")
-        scope_title = f"Last 7 Days (Since {since_date})"
+        start_date = end_date - datetime.timedelta(days=6)
+        scope_title = f"Week {start_date.strftime('%b %d')} – {end_date.strftime('%b %d, %Y')}"
     elif interval == "monthly":
-        since_date = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
-        git_args.append(f"--since={since_date}")
-        scope_title = f"Last 30 Days (Since {since_date})"
+        start_date = end_date - datetime.timedelta(days=29)
+        scope_title = f"30 Days {start_date.strftime('%b %d')} – {end_date.strftime('%b %d, %Y')}"
     else:
+        start_date = datetime.date.min
         scope_title = "Complete Project Lifecycle (All Commits)"
     scope_title += " &nbsp;|&nbsp; <b>Branches:</b> All"
 
@@ -88,6 +89,15 @@ def get_git_metrics(interval="weekly"):
                 date_str = parts[3].strip()
                 msg = '|||'.join(parts[4:]).strip()
             else:
+                continue
+
+            try:
+                commit_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                current_author = None
+                continue
+            if not (start_date <= commit_date <= end_date):
+                current_author = None
                 continue
 
             # --- IGNORE AUTOMATED BOTS ---
@@ -162,14 +172,14 @@ def create_charts(students, timeline_activity, interval):
     return Image(img_buffer, width=500, height=170)
 
 
-def generate_pdf(interval="weekly"):
+def generate_pdf(interval="weekly", end_date=None):
     repo_name, branch_name = get_repo_info()
-    students, timeline_activity, student_logs, scope_title = get_git_metrics(interval)
+    students, timeline_activity, student_logs, scope_title = get_git_metrics(interval, end_date)
 
     if students is None:
         return
 
-    date_stamp = datetime.date.today().strftime("%Y-%m-%d")
+    date_stamp = (end_date or datetime.date.today()).strftime("%Y-%m-%d")
 
     if interval == "weekly":
         report_title = "Weekly Progress Report (Form-3)"
@@ -380,5 +390,7 @@ def generate_pdf(interval="weekly"):
 
 
 if __name__ == "__main__":
+    # Usage: python generate_report.py [weekly|monthly|final] [END_DATE as YYYY-MM-DD]
     chosen_interval = sys.argv[1].lower() if len(sys.argv) > 1 else "weekly"
-    generate_pdf(chosen_interval)
+    chosen_end = datetime.date.fromisoformat(sys.argv[2]) if len(sys.argv) > 2 else None
+    generate_pdf(chosen_interval, chosen_end)
