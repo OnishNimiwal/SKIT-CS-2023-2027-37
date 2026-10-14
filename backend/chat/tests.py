@@ -3,8 +3,9 @@ import requests
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
+from django.test import override_settings
 from rest_framework.test import APITestCase
-from .services import ask_ollama
+from .services import ask_ollama, ollama_options
 
 class ChatAPITests(APITestCase):
     def setUp(self):
@@ -132,3 +133,29 @@ class ChatAPITests(APITestCase):
 
         result = ask_ollama("Direct query")
         self.assertEqual(result, "Direct service output")
+
+
+class OllamaOptionsTests(APITestCase):
+    """Speed options added to every Ollama request (think flag, keep_alive)."""
+
+    @override_settings(OLLAMA_THINK=False, OLLAMA_KEEP_ALIVE="30m", OLLAMA_THINKING_MODELS=["qwen3"])
+    def test_thinking_model_gets_think_false_and_keep_alive(self):
+        self.assertEqual(ollama_options("qwen3:8b"), {"keep_alive": "30m", "think": False})
+
+    @override_settings(OLLAMA_THINK=False, OLLAMA_KEEP_ALIVE="30m", OLLAMA_THINKING_MODELS=["qwen3"])
+    def test_non_thinking_model_gets_no_think_flag(self):
+        self.assertEqual(ollama_options("llama3.2:3b"), {"keep_alive": "30m"})
+
+    @override_settings(OLLAMA_THINK=None, OLLAMA_KEEP_ALIVE="", OLLAMA_THINKING_MODELS=["qwen3"])
+    def test_model_default_sends_nothing(self):
+        self.assertEqual(ollama_options("qwen3:8b"), {})
+
+    @override_settings(OLLAMA_MODEL="qwen3:8b", OLLAMA_THINK=False, OLLAMA_KEEP_ALIVE="30m",
+                       OLLAMA_THINKING_MODELS=["qwen3"])
+    @patch("chat.services.requests.post")
+    def test_ask_ollama_sends_speed_options(self, mock_post):
+        mock_post.return_value = Mock(json=Mock(return_value={"response": "Paris"}), raise_for_status=Mock())
+        self.assertEqual(ask_ollama("Capital of France?"), "Paris")
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIs(payload["think"], False)
+        self.assertEqual(payload["keep_alive"], "30m")

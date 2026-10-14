@@ -149,3 +149,11 @@ CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_trusted_env.split(',')
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3:4b')
 ALLOW_EXTERNAL_AI = os.getenv('ALLOW_EXTERNAL_AI', 'False').lower() in ('true', '1', 'yes')
+# Qwen3 "thinking": "false" (default) = answer directly, much faster (measured 10-60 s -> 0.2-3 s);
+# "true" = force step-by-step reasoning; empty = model default (on). Only sent to models
+# listed in OLLAMA_THINKING_MODELS, since Ollama rejects `think` for other models.
+_think = os.getenv('OLLAMA_THINK', 'false').strip().lower()
+OLLAMA_THINK = {'true': True, '1': True, 'yes': True, 'false': False, '0': False, 'no': False}.get(_think)
+OLLAMA_THINKING_MODELS = [m.strip() for m in os.getenv('OLLAMA_THINKING_MODELS', 'qwen3,deepseek-r1').split(',') if m.strip()]
+# How long Ollama keeps the model in GPU memory after a request (Ollama's default is 5m).
+OLLAMA_KEEP_ALIVE = os.getenv('OLLAMA_KEEP_ALIVE', '30m')

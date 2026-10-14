@@ -1,5 +1,6 @@
 import requests
 from django.conf import settings
+from chat.services import ollama_options
 
 class OllamaServiceError(Exception):
     """Raised when communication with Ollama server fails."""
@@ -14,6 +15,7 @@ def _query_ollama(prompt: str) -> str:
                 "model": settings.OLLAMA_MODEL,
                 "prompt": prompt,
                 "stream": False,
+                **ollama_options(settings.OLLAMA_MODEL),
             },
             timeout=120,
         )
