@@ -147,3 +147,4 @@ OLLAMA_EMBED_MODEL = os.getenv('OLLAMA_EMBED_MODEL', 'nomic-embed-text')
 VECTOR_DB_DIR = BASE_DIR / 'vector_db'
 RAG_TOP_K = int(os.getenv('RAG_TOP_K', '4'))
 RAG_MIN_SCORE = float(os.getenv('RAG_MIN_SCORE', '0.3'))
+RAG_FETCH_K = int(os.getenv('RAG_FETCH_K', '12'))  # candidates pulled before filtering
