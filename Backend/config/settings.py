@@ -148,3 +148,6 @@ VECTOR_DB_DIR = BASE_DIR / 'vector_db'
 RAG_TOP_K = int(os.getenv('RAG_TOP_K', '4'))
 RAG_MIN_SCORE = float(os.getenv('RAG_MIN_SCORE', '0.3'))
 RAG_FETCH_K = int(os.getenv('RAG_FETCH_K', '12'))  # candidates pulled before filtering
+RAG_MAX_CONTEXT_CHARS = int(os.getenv('RAG_MAX_CONTEXT_CHARS', '6000'))
+RAG_HISTORY_MESSAGES = int(os.getenv('RAG_HISTORY_MESSAGES', '10'))
+RAG_HISTORY_CHARS = int(os.getenv('RAG_HISTORY_CHARS', '4000'))
