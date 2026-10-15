@@ -35,6 +35,9 @@ media/
 backend/media/
 staticfiles/
 
+# RAG vector database (Chroma)
+vector_db/
+
 # Node / Frontend
 node_modules/
 frontend/node_modules/
