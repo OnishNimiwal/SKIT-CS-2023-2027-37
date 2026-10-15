@@ -17,6 +17,7 @@ class ChatAPIView(APIView):
                 "success": True,
                 "response": out["answer"],
                 "sources": out["sources"],
+                "citations": out["citations"],
                 "model": "local-ollama",
                 "external_api": False,
                 "thread_id": data["thread_id"],

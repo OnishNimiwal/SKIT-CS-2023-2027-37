@@ -19,4 +19,5 @@ def ask_ollama(
     return {
         "answer": result["messages"][-1].content,
         "sources": result.get("sources", []),
+        "citations": result.get("citations", []),
     }

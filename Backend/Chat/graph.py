@@ -7,26 +7,14 @@ import re
 from functools import lru_cache
 
 from django.conf import settings
-from langchain_core.messages import AIMessage, SystemMessage, trim_messages
+from langchain_core.messages import AIMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 
-from .rag import retrieve
-
-GENERATE_PROMPT = (
-    "You are an on-premise assistant that answers questions about the user's uploaded documents.\n"
-    "Use ONLY the context below. If the answer is not in the context, say you could not find it.\n"
-    "Be concise.\n\nCONTEXT:\n{context}"
-)
-
-CONDENSE_PROMPT = (
-    "Given the conversation and a follow-up question, rewrite the follow-up as a standalone "
-    "question that can be understood without the conversation. Return ONLY the question.\n\n"
-    "Conversation:\n{history}\n\nFollow-up: {question}\n\nStandalone question:"
-)
-
-NOT_FOUND = "I couldn't find anything relevant to that in your uploaded documents."
+from .context import fit_chunks_to_budget, trim_history
+from .prompts import NOT_FOUND, build_condense_prompt, build_system_prompt
+from .retrieval import retrieve_chunks
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
@@ -39,15 +27,16 @@ def strip_think(text: str) -> str:
 class RAGState(MessagesState):
     doc_ids: list[str]
     question: str
-    context: str
+    chunks: list[dict]
     sources: list[str]
+    citations: list[dict]
 
 
 @lru_cache(maxsize=1)
 def get_llm() -> ChatOllama:
     return ChatOllama(
         model=settings.OLLAMA_MODEL,
-        base_url=settings.OLLAMA_URL,
+        base_url=settings.OLLAMA_URL,   # local Ollama only
         temperature=0.2,
         client_kwargs={"timeout": 120},
     )
@@ -59,47 +48,50 @@ def condense_node(state: RAGState):
     question = msgs[-1].content
     if len(msgs) < 3:  # first turn, nothing to resolve
         return {"question": question}
-    recent = msgs[:-1][-6:]
-    history = "\n".join(
-        f"{'User' if m.type == 'human' else 'Assistant'}: {m.content}" for m in recent
-    )
+    history = trim_history(msgs[:-1], max_messages=6, max_chars=2000)
     rewritten = strip_think(
-        get_llm().invoke(CONDENSE_PROMPT.format(history=history, question=question)).content
+        get_llm().invoke(build_condense_prompt(history, question)).content
     )
     return {"question": rewritten or question}
 
 
 def retrieve_node(state: RAGState):
+    """Retrieve relevant chunks and fit them to the context budget."""
     try:
-        docs = retrieve(state["question"], state.get("doc_ids") or None)
+        chunks = retrieve_chunks(state["question"], state.get("doc_ids") or None)
     except Exception:
-        docs = []  # chat still responds if the vector DB is empty/unavailable
+        chunks = []  # chat still responds if the vector DB is empty/unavailable
+    chunks = fit_chunks_to_budget(chunks)
     return {
-        "context": "\n\n---\n\n".join(d.page_content for d in docs),
-        "sources": sorted({d.metadata.get("source", "unknown") for d in docs}),
+        "chunks": chunks,
+        "sources": sorted({c["source"] for c in chunks}),
+        "citations": [
+            {
+                "index": i,
+                "source": c["source"],
+                "chunk": c["chunk"],
+                "score": c["score"],
+                "snippet": c["text"][:200],
+            }
+            for i, c in enumerate(chunks, start=1)
+        ],
     }
 
 
 def route(state: RAGState) -> str:
-    return "generate" if state["context"] else "not_found"
+    return "generate" if state["chunks"] else "not_found"
 
 
 def generate_node(state: RAGState):
-    history = trim_messages(
-        state["messages"],
-        strategy="last",
-        max_tokens=10,
-        token_counter=len,      # count messages; no tokenizer download needed offline
-        start_on="human",
-        include_system=False,
-    )
-    system = SystemMessage(GENERATE_PROMPT.format(context=state["context"]))
+    """Build the prompt from retrieved chunks and recent history, then answer."""
+    history = trim_history(state["messages"])
+    system = SystemMessage(build_system_prompt(state["chunks"]))
     reply = get_llm().invoke([system, *history])
     return {"messages": [AIMessage(strip_think(reply.content))]}
 
 
 def not_found_node(state: RAGState):
-    return {"messages": [AIMessage(NOT_FOUND)], "sources": []}
+    return {"messages": [AIMessage(NOT_FOUND)], "sources": [], "citations": []}
 
 
 @lru_cache(maxsize=1)
@@ -118,4 +110,5 @@ def get_graph():
     b.add_edge("generate", END)
     b.add_edge("not_found", END)
 
+    # In-memory checkpointer: works offline, per process.
     return b.compile(checkpointer=MemorySaver())

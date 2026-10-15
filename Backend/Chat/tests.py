@@ -17,6 +17,7 @@ class ChatAPITests(APITestCase):
         mock_get_graph.return_value.invoke.return_value = {
             "messages": [AIMessage("Hello! I am your local AI assistant running on PC5.")],
             "sources": ["report.pdf"],
+            "citations": [{"index": 1, "source": "report.pdf", "chunk": 0, "score": 0.9, "snippet": "..."}],
         }
         response = self.client.post(
             self.chat_url, {"message": "Hello AI", "thread_id": "t1"}, format="json"
@@ -28,6 +29,7 @@ class ChatAPITests(APITestCase):
             "Hello! I am your local AI assistant running on PC5.",
         )
         self.assertEqual(response.data.get("sources"), ["report.pdf"])
+        self.assertEqual(response.data.get("citations")[0]["index"], 1)
         self.assertEqual(response.data.get("model"), "local-ollama")
         self.assertFalse(response.data.get("external_api"))
         self.assertEqual(response.data.get("thread_id"), "t1")
@@ -61,9 +63,32 @@ class ChatAPITests(APITestCase):
         result = ask_ollama("Direct query")
         self.assertEqual(result["answer"], "Direct service output")
         self.assertEqual(result["sources"], [])
+        self.assertEqual(result["citations"], [])
 
-    @patch("chat.graph.retrieve", return_value=[])
+    @patch("chat.graph.retrieve_chunks", return_value=[])
     def test_no_relevant_chunks_returns_not_found(self, _mock_retrieve):
         result = ask_ollama("Something unrelated", thread_id="not-found-test")
         self.assertIn("couldn't find", result["answer"])
         self.assertEqual(result["sources"], [])
+        self.assertEqual(result["citations"], [])
+
+    @patch("chat.graph.get_llm")
+    @patch("chat.graph.retrieve_chunks")
+    def test_retrieved_chunks_reach_prompt_and_citations(self, mock_retrieve, mock_get_llm):
+        mock_retrieve.return_value = [{
+            "text": "The warranty lasts 2 years.",
+            "source": "terms.pdf",
+            "doc_id": "1",
+            "chunk": 0,
+            "score": 0.9,
+        }]
+        mock_get_llm.return_value.invoke.return_value = AIMessage("It lasts 2 years [1].")
+
+        result = ask_ollama("How long is the warranty?", thread_id="generate-test")
+
+        self.assertEqual(result["answer"], "It lasts 2 years [1].")
+        self.assertEqual(result["sources"], ["terms.pdf"])
+        self.assertEqual(result["citations"][0]["index"], 1)
+        system_prompt = mock_get_llm.return_value.invoke.call_args[0][0][0].content
+        self.assertIn("The warranty lasts 2 years.", system_prompt)
+        self.assertIn("[1] (source: terms.pdf)", system_prompt)
