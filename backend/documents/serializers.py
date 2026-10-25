@@ -14,7 +14,6 @@ class DocumentListSerializer(serializers.ModelSerializer):
 
 class DocumentDetailSerializer(serializers.ModelSerializer):
     text_length = serializers.SerializerMethodField()
-    file_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -25,16 +24,10 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             'extracted_text',
             'uploaded_at',
             'text_length',
-            'file_url',
         ]
 
     def get_text_length(self, obj):
         return len(obj.extracted_text) if obj.extracted_text else 0
-
-    def get_file_url(self, obj):
-        if obj.file:
-            return obj.file.url
-        return None
 
 class DocumentUploadSerializer(serializers.Serializer):
     file = serializers.FileField(required=True)

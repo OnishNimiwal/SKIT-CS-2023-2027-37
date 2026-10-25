@@ -97,6 +97,7 @@ class DocumentAPITests(APITestCase):
         mock_post.return_value = mock_resp
 
         doc = Document.objects.create(
+            owner=self.user,
             original_name="test.txt",
             file_type="TXT",
             extracted_text="MRPL system uses PC5 workstation with local Qwen model.",
@@ -119,6 +120,7 @@ class DocumentAPITests(APITestCase):
         mock_post.return_value = mock_resp
 
         doc = Document.objects.create(
+            owner=self.user,
             original_name="summary_test.txt",
             file_type="TXT",
             extracted_text="Project completed on schedule with zero cloud dependencies.",
@@ -137,6 +139,7 @@ class DocumentAPITests(APITestCase):
         mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
 
         doc = Document.objects.create(
+            owner=self.user,
             original_name="offline.txt",
             file_type="TXT",
             extracted_text="Sample text.",
@@ -152,6 +155,7 @@ class DocumentAPITests(APITestCase):
     def test_generate_and_download_docx_report(self):
         """Test generating a Word DOCX report returns valid docx binary."""
         doc = Document.objects.create(
+            owner=self.user,
             original_name="audit_report.txt",
             file_type="TXT",
             extracted_text="Detailed audit findings for MRPL infrastructure.",
@@ -181,6 +185,7 @@ class DocumentAPITests(APITestCase):
     def test_delete_document(self):
         """Test deleting a document removes it from the database."""
         doc = Document.objects.create(
+            owner=self.user,
             original_name="delete_me.txt",
             file_type="TXT",
             extracted_text="Temp text",
@@ -208,3 +213,45 @@ class DocumentAPITests(APITestCase):
             )
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertTrue(response.data["success"])
+
+
+class DocumentOwnershipTests(APITestCase):
+    """Each signed-in user only sees and changes their own documents."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.alice = User.objects.create_user(username='alice', password='test-pass-123')
+        self.bob = User.objects.create_user(username='bob', password='test-pass-123')
+        self.alice_doc = Document.objects.create(
+            owner=self.alice, original_name="alice.txt", file_type="TXT", extracted_text="Alice's notes",
+        )
+        self.client.force_login(self.bob)
+
+    def test_list_only_shows_own_documents(self):
+        Document.objects.create(owner=self.bob, original_name="bob.txt", file_type="TXT", extracted_text="Bob")
+        response = self.client.get(reverse("document-list"))
+        names = [d["original_name"] for d in response.data["documents"]]
+        self.assertEqual(names, ["bob.txt"])
+
+    def test_cannot_read_another_users_document(self):
+        response = self.client.get(reverse("document-detail", kwargs={"pk": self.alice_doc.id}))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_delete_another_users_document(self):
+        response = self.client.delete(reverse("document-detail", kwargs={"pk": self.alice_doc.id}))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(Document.objects.filter(pk=self.alice_doc.id).exists())
+
+    @patch("documents.services.requests.post")
+    def test_cannot_ask_about_another_users_document(self, mock_post):
+        response = self.client.post(
+            reverse("document-ask", kwargs={"pk": self.alice_doc.id}), {"question": "What is in it?"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        mock_post.assert_not_called()
+
+    def test_upload_sets_owner(self):
+        upload = SimpleUploadedFile("mine.txt", b"Bob's uploaded text", content_type="text/plain")
+        response = self.client.post(reverse("document-upload"), {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Document.objects.get(pk=response.data["document"]["id"]).owner, self.bob)

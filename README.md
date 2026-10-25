@@ -85,6 +85,8 @@ graph TD
   - `External API: Disabled`
   - `Model: Local Ollama (Qwen)`
 - **Offline Capable**: The application can run entirely without an active internet connection once initial dependencies and models are loaded.
+- **Signed-in Access Only**: Every API endpoint requires a session login (accounts are created by an administrator). Write requests are CSRF-protected.
+- **Private Documents**: Each document belongs to the user who uploaded it; other users cannot list, read, question or delete it. Uploaded files are not served over a public `/media/` URL.
 
 ---
 
@@ -170,6 +172,7 @@ mrpl-ai-workbench/
 │   │   ├── urls.py                 # Root URL routing
 │   │   ├── asgi.py                 # ASGI entrypoint
 │   │   └── wsgi.py                 # WSGI entrypoint
+│   ├── accounts/                   # Session login, logout and current-user endpoints
 │   ├── chat/                       # Phase 1: General Chat App
 │   │   ├── apps.py
 │   │   ├── serializers.py          # Validates 'message'
@@ -210,6 +213,12 @@ mrpl-ai-workbench/
 │               ├── DocumentViewer.jsx      # Workspace (Q&A, Summary, Raw text tabs)
 │               ├── DocumentQuestionBox.jsx # Document-specific Q&A chat
 │               └── DocumentsPage.jsx       # Document Assistant master-detail layout
+├── rag_backend/                    # Separate RAG prototype (LangGraph + ChromaDB), own requirements.txt
+├── OCR_modul/                      # Offline OCR module (Tesseract) for images and scanned PDFs
+├── voice_search/                   # Voice search module (Whisper speech-to-text)
+├── generate_report.py              # Weekly Form-3 progress report generator (see section 9)
+├── weekly_reports/                 # Archived weekly reports (committed by GitHub Actions)
+├── .github/workflows/              # Automated weekly report workflow
 ├── .env.example                    # Template for environment variables
 ├── .gitignore                      # Ignores env/, db.sqlite3, media/, node_modules/
 ├── requirements.txt                # Frozen Python dependencies
@@ -220,6 +229,16 @@ mrpl-ai-workbench/
 
 ## 6. API Endpoints Reference
 
+### Auth Endpoints
+All other endpoints return HTTP 403 unless the request carries a signed-in session.
+
+| Method | Endpoint | Description | Payload |
+|---|---|---|---|
+| `GET` | `/api/auth/csrf/` | Set the CSRF cookie | None |
+| `POST` | `/api/auth/login/` | Sign in | `{"username": "...", "password": "..."}` |
+| `POST` | `/api/auth/logout/` | Sign out | None |
+| `GET` | `/api/auth/me/` | Current user (`{"authenticated": false}` when signed out) | None |
+
 ### Chat Endpoints (Phase 1)
 | Method | Endpoint | Description | Payload |
 |---|---|---|---|
@@ -229,7 +248,7 @@ mrpl-ai-workbench/
 | Method | Endpoint | Description | Payload |
 |---|---|---|---|
 | `POST` | `/api/documents/upload/` | Upload and extract a PDF or TXT file | `multipart/form-data` with `file` |
-| `GET` | `/api/documents/` | List all uploaded documents | None |
+| `GET` | `/api/documents/` | List the signed-in user's documents | None |
 | `GET` | `/api/documents/<id>/` | Get details and extracted text of a document | None |
 | `POST` | `/api/documents/<id>/ask/` | Ask a question grounded in the document | `{"question": "..."}` |
 | `POST` | `/api/documents/<id>/summary/` | Generate an executive summary of the document | None |
@@ -248,20 +267,24 @@ ollama pull qwen3:4b
 ```
 
 ### Step 2: Start Django Backend (Terminal 1)
+Run from the repository root (first time: `python3 -m venv venv && venv/bin/pip install -r requirements.txt` and `cp .env.example .env`).
 ```bash
-cd /home/onish/Desktop/Dj
-./env/bin/python backend/manage.py runserver 0.0.0.0:8000
+venv/bin/python backend/manage.py migrate
+venv/bin/python backend/manage.py createsuperuser   # first time only: creates a login
+venv/bin/python backend/manage.py runserver 0.0.0.0:8000
 ```
 
 ### Step 3: Start React Frontend (Terminal 2)
 ```bash
-cd /home/onish/Desktop/Dj/frontend
+cd frontend
+npm install        # first time only
 npm run dev -- --host 0.0.0.0
 ```
 
 ### Step 4: Access the Application
 - **Locally on PC5**: `http://localhost:5173`
 - **Across Local LAN (PC2, PC3, PC4)**: `http://192.168.1.11:5173` *(find your PC5 IP using `hostname -I`)*.
+- Sign in with an account created by `createsuperuser` or in the Django admin (`/admin/`).
 
 ---
 
@@ -270,11 +293,12 @@ npm run dev -- --host 0.0.0.0
 The repository includes a comprehensive automated test suite testing both Phase 1 and Phase 2:
 
 ```bash
-cd /home/onish/Desktop/Dj
-./env/bin/python backend/manage.py test documents chat --verbosity=2
+venv/bin/python backend/manage.py test documents chat accounts --verbosity=2
 ```
 
-### Test Coverage (18 Tests Total):
+### Test Coverage (34 Tests Total)
+The list below covers chat and document behaviour. `accounts.tests` covers login/logout and the sign-in requirement, and `documents.tests.DocumentOwnershipTests` checks that users cannot see or change each other's documents.
+
 - **Document Tests (`documents.tests`)**:
   - `test_upload_valid_pdf_file`: PyMuPDF text extraction from PDF.
   - `test_upload_valid_txt_file`: Text extraction from `.txt`.
@@ -295,3 +319,21 @@ cd /home/onish/Desktop/Dj
   - `test_ollama_server_timeout`: Request timeout handling (HTTP 503).
   - `test_ollama_server_http_error`: Upstream 500 error handling (HTTP 503).
   - `test_ask_ollama_service_direct`: Unit test for direct service invocation.
+
+---
+
+## 9. Weekly Progress Reports (Form-3)
+
+`generate_report.py` builds the department's Form-3 PDF from the Git history of **all branches**, one section per student, with a merged mentor-marks cell and signature block. `.mailmap` merges each student's Git identities into one name.
+
+```bash
+venv/bin/pip install reportlab matplotlib    # first time only
+venv/bin/python generate_report.py weekly              # last 7 days, ending today
+venv/bin/python generate_report.py weekly 2026-10-08   # the 7 days ending on a given date
+venv/bin/python generate_report.py monthly             # last 30 days
+venv/bin/python generate_report.py final               # whole project
+```
+
+GitHub Actions (`.github/workflows/auto_weekly_report.yml`) runs the weekly report every Thursday at 11:59 PM IST on the default branch (`main`) and commits it to `weekly_reports/`. It can also be started from the **Actions** tab with **Run workflow**.
+
+Commits only count once they are pushed to GitHub, on any branch.
