@@ -1,7 +1,5 @@
 from django.contrib import admin
 from django.urls import include, path
-from django.conf import settings
-from django.conf.urls.static import static
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -10,5 +8,5 @@ urlpatterns = [
     path("api/documents/", include("documents.urls")),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Uploaded files are deliberately not served under /media/: they would be readable
+# without signing in. Document content is only exposed through the owner-checked API.

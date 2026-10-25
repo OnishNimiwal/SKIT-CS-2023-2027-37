@@ -26,6 +26,10 @@ from .services import (
 )
 from .generators import generate_document_docx_report
 
+def get_user_document(request, pk):
+    """The requested document if it belongs to the signed-in user, else 404."""
+    return get_object_or_404(Document, pk=pk, owner=request.user)
+
 class DocumentUploadView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
@@ -72,6 +76,7 @@ class DocumentUploadView(APIView):
 
         # Save to database
         doc = Document.objects.create(
+            owner=request.user,
             file=uploaded_file,
             original_name=uploaded_file.name,
             file_type=file_type,
@@ -89,18 +94,18 @@ class DocumentUploadView(APIView):
 
 class DocumentListView(APIView):
     def get(self, request):
-        documents = Document.objects.all()
+        documents = Document.objects.filter(owner=request.user)
         serializer = DocumentListSerializer(documents, many=True)
         return Response({"success": True, "documents": serializer.data})
 
 class DocumentDetailView(APIView):
     def get(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk)
+        doc = get_user_document(request, pk)
         serializer = DocumentDetailSerializer(doc)
         return Response({"success": True, "document": serializer.data})
 
     def delete(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk)
+        doc = get_user_document(request, pk)
         original_name = doc.original_name
         doc.delete()
         return Response(
@@ -110,7 +115,7 @@ class DocumentDetailView(APIView):
 
 class DocumentAskView(APIView):
     def post(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk)
+        doc = get_user_document(request, pk)
         serializer = DocumentAskSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
@@ -144,7 +149,7 @@ class DocumentAskView(APIView):
 
 class DocumentSummaryView(APIView):
     def post(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk)
+        doc = get_user_document(request, pk)
 
         try:
             summary = summarize_document(
@@ -169,7 +174,7 @@ class DocumentSummaryView(APIView):
 
 class DocumentGenerateReportView(APIView):
     def post(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk)
+        doc = get_user_document(request, pk)
         serializer = DocumentReportSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         summary_text = serializer.validated_data.get("summary", "")
