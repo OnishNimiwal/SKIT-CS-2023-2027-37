@@ -38,7 +38,8 @@ jobs:
       - name: Move PDF to Weekly Reports Directory & Commit to Repository
         run: |
           mkdir -p weekly_reports
-          mv *_Weekly_Progress_Report_Form-3_*.pdf weekly_reports/
+          # Only this repository's report (generate_report.py names it after the repo folder)
+          mv "$(basename "$GITHUB_WORKSPACE")"_Weekly_Progress_Report_Form-3_*.pdf weekly_reports/
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -48,6 +49,6 @@ jobs:
             echo "No new changes or reports to commit."
           else
             git commit -m "docs: archive Form-3 weekly progress report [skip ci]"
-            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
