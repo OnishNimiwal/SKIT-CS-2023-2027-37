@@ -1,0 +1,13 @@
+# Binary and generated files: never diffed as text, so they don't count as
+# "lines of code" in the weekly Form-3 report (generate_report.py).
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.zip  binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.sqlite3 binary
