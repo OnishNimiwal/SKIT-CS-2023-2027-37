@@ -152,3 +152,5 @@ RAG_MAX_CONTEXT_CHARS = int(os.getenv('RAG_MAX_CONTEXT_CHARS', '6000'))
 RAG_HISTORY_MESSAGES = int(os.getenv('RAG_HISTORY_MESSAGES', '10'))
 RAG_HISTORY_CHARS = int(os.getenv('RAG_HISTORY_CHARS', '4000'))
 RAG_MAX_QUESTION_CHARS = int(os.getenv('RAG_MAX_QUESTION_CHARS', '2000'))
+RAG_MAX_RETRIES = int(os.getenv('RAG_MAX_RETRIES', '1'))   # query rewrites per question
+RAG_GOOD_SCORE = float(os.getenv('RAG_GOOD_SCORE', '0.4')) # best score needed to skip a retry

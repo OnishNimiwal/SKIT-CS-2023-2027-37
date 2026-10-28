@@ -19,6 +19,13 @@ CONDENSE_TEMPLATE = (
     "Conversation:\n{history}\n\nFollow-up: {question}\n\nStandalone question:"
 )
 
+REWRITE_TEMPLATE = (
+    "A search of a document collection did not find good passages for the question below. "
+    "Rewrite it as a short keyword-style search query (5 to 12 words) that is likely to match "
+    "the wording used in the documents. Keep names, numbers and technical terms. "
+    "Return ONLY the query.\n\nQuestion: {question}\n\nSearch query:"
+)
+
 
 def format_context(chunks: list[dict]) -> str:
     """Number each passage so the model can cite it as [n]."""
@@ -41,3 +48,7 @@ def format_history(messages) -> str:
 
 def build_condense_prompt(history_messages, question: str) -> str:
     return CONDENSE_TEMPLATE.format(history=format_history(history_messages), question=question)
+
+
+def build_rewrite_prompt(question: str) -> str:
+    return REWRITE_TEMPLATE.format(question=question)

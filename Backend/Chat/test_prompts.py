@@ -1,7 +1,12 @@
 from django.test import SimpleTestCase
 from langchain_core.messages import AIMessage, HumanMessage
 
-from .prompts import build_condense_prompt, build_system_prompt, format_context
+from .prompts import (
+    build_condense_prompt,
+    build_rewrite_prompt,
+    build_system_prompt,
+    format_context,
+)
 
 CHUNKS = [
     {"text": "First passage.", "source": "a.pdf", "doc_id": "1", "chunk": 0, "score": 0.9},
@@ -31,3 +36,8 @@ class PromptTests(SimpleTestCase):
         self.assertIn("User: What is the policy?", prompt)
         self.assertIn("Assistant: It covers 2 years.", prompt)
         self.assertIn("Follow-up: and the price?", prompt)
+
+    def test_rewrite_prompt_includes_question_and_asks_for_keywords(self):
+        prompt = build_rewrite_prompt("how long is the warranty {x}?")
+        self.assertIn("how long is the warranty {x}?", prompt)
+        self.assertIn("keyword-style search query", prompt)
