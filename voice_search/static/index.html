@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Search</title>
+<style>
+  :root { --bg:#f6f7f9; --fg:#1b1f24; --muted:#5b6570; --card:#fff; --line:#d9dee4; --accent:#1f5eff; --rec:#c62828; --err:#b3261e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --fg:#e8ebee; --muted:#9aa4af; --card:#1d2227; --line:#313941; --accent:#6c93ff; --rec:#ff6b6b; --err:#ff8a80; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:960px; margin:0 auto; padding:24px 16px 64px; display:grid; gap:20px; grid-template-columns:1fr; }
+  @media (min-width:800px) { main { grid-template-columns:340px 1fr; } header { grid-column:1 / -1; } }
+  h1 { font-size:20px; margin:0; } h2 { font-size:15px; margin:0 0 10px; } h3 { font-size:13px; margin:16px 0 6px; color:var(--muted); font-weight:600; }
+  .sub { color:var(--muted); margin:4px 0 0; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; }
+  input[type=file], input[type=text] { width:100%; }
+  input[type=text] { padding:10px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:inherit; }
+  button { font:inherit; padding:9px 14px; border:0; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer; }
+  button.rec { background:var(--rec); }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); padding:3px 8px; font-size:13px; }
+  button:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button:disabled { opacity:.55; cursor:wait; }
+  ul { list-style:none; margin:12px 0 0; padding:0; display:grid; gap:8px; }
+  li.doc { display:flex; justify-content:space-between; gap:8px; align-items:center; font-size:14px; word-break:break-all; }
+  li.doc small { color:var(--muted); display:block; }
+  .row { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  .timer { font-variant-numeric:tabular-nums; color:var(--muted); }
+  .msg { margin-top:12px; white-space:pre-wrap; }
+  .err { color:var(--err); }
+  .hit { margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
+  .hit .meta { color:var(--muted); font-size:13px; }
+  .hit p { margin:6px 0; white-space:pre-wrap; }
+  audio { width:100%; margin-top:4px; }
+  .ts { font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Voice Search</h1>
+    <p class="sub">Record or upload speech. It is transcribed on this machine, and you can search what was said and jump to that moment.</p>
+  </header>
+
+  <section aria-labelledby="rec">
+    <h2 id="rec">Add audio</h2>
+    <div class="row">
+      <button id="recBtn">Start recording</button>
+      <span id="timer" class="timer" aria-live="off"></span>
+    </div>
+    <h3>or upload a file</h3>
+    <input id="file" type="file" accept=".mp3,.wav,.m4a,.flac,.ogg,.opus,.aac,.wma,.webm,.mp4">
+    <div class="row"><button id="uploadBtn">Upload and transcribe</button></div>
+    <div id="upStatus" class="msg" role="status"></div>
+    <ul id="docs"></ul>
+  </section>
+
+  <section aria-labelledby="find">
+    <h2 id="find">Search what was said</h2>
+    <div class="row">
+      <input id="q" type="text" placeholder="deadline, meeting agenda, budget..." aria-label="Search query">
+      <button id="searchBtn">Search</button>
+    </div>
+    <div id="results"></div>
+    <div id="transcript"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || r.statusText);
+  return body;
+}
+
+async function loadFiles() {
+  const files = await api('/api/files');
+  $('docs').innerHTML = files.length ? files.map(f => `
+    <li class="doc"><span>${esc(f.filename)}<small>${mmss(f.duration)} long, ${esc(f.language)}</small></span>
+    <span><button class="ghost" data-view="${f.doc_id}">Transcript</button>
+    <button class="ghost" data-del="${f.doc_id}">Remove</button></span></li>`).join('')
+    : '<li class="sub">No recordings yet.</li>';
+}
+
+$('docs').addEventListener('click', async e => {
+  if (e.target.dataset.del) { await api('/api/files/' + e.target.dataset.del, { method: 'DELETE' }); $('transcript').innerHTML = ''; loadFiles(); }
+  if (e.target.dataset.view) {
+    const { transcript } = await api('/api/transcript/' + e.target.dataset.view);
+    $('transcript').innerHTML = '<h3>Transcript</h3>' + transcript.map(c => `<p><span class="ts meta">[${mmss(c.start)}]</span> ${esc(c.text)}</p>`).join('');
+  }
+});
+
+async function send(blobOrFile, name) {
+  const fd = new FormData(); fd.append('file', blobOrFile, name);
+  $('upStatus').className = 'msg';
+  $('upStatus').textContent = 'Transcribing on this machine. Long recordings can take a few minutes.';
+  try {
+    const r = await api('/api/upload', { method: 'POST', body: fd });
+    $('upStatus').textContent = `Done: ${mmss(r.duration)} of audio, language ${r.language}, ${r.chunks} searchable parts.\n\n${r.transcript[0].text.slice(0, 300)}`;
+    loadFiles();
+  } catch (e) { $('upStatus').className = 'msg err'; $('upStatus').textContent = e.message; }
+}
+
+$('uploadBtn').onclick = async () => {
+  const f = $('file').files[0];
+  if (!f) { $('upStatus').textContent = 'Choose an audio file first.'; return; }
+  $('uploadBtn').disabled = true; await send(f, f.name); $('uploadBtn').disabled = false; $('file').value = '';
+};
+
+// ---- microphone recording (works on localhost or https) ----
+let recorder, chunks = [], tick, t0;
+$('recBtn').onclick = async () => {
+  if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recorder = new MediaRecorder(stream); chunks = [];
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = async () => {
+      clearInterval(tick); stream.getTracks().forEach(t => t.stop());
+      $('recBtn').textContent = 'Start recording'; $('recBtn').classList.remove('rec'); $('timer').textContent = '';
+      const type = recorder.mimeType || 'audio/webm';
+      const ext = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'mp4' : 'webm';
+      const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      $('recBtn').disabled = true;
+      await send(new Blob(chunks, { type }), `Recording ${stamp}.${ext}`);
+      $('recBtn').disabled = false;
+    };
+    recorder.start(); t0 = Date.now();
+    $('recBtn').textContent = 'Stop recording'; $('recBtn').classList.add('rec');
+    tick = setInterval(() => { $('timer').textContent = mmss((Date.now() - t0) / 1000); }, 500);
+  } catch (e) {
+    $('upStatus').className = 'msg err';
+    $('upStatus').textContent = 'Microphone not available: ' + e.message + '. Allow microphone access and use localhost or https.';
+  }
+};
+
+async function search() {
+  const q = $('q').value.trim();
+  if (q.length < 2) return;
+  $('searchBtn').disabled = true; $('results').innerHTML = ''; $('transcript').innerHTML = '';
+  try {
+    const { results } = await api('/api/search', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ query: q }) });
+    $('results').innerHTML = results.length ? results.map(r => `
+      <div class="hit">
+        <b>${esc(r.filename)}</b>
+        <div class="meta"><span class="ts">${mmss(r.start)} to ${mmss(r.end)}</span>, match ${r.score}</div>
+        <p>${esc(r.text)}</p>
+        <audio controls preload="none" src="/api/audio/${encodeURIComponent(r.file)}#t=${r.start}"></audio>
+      </div>`).join('') : '<p class="msg">Nothing indexed yet. Record or upload audio first.</p>';
+  } catch (e) { $('results').innerHTML = `<p class="msg err">${esc(e.message)}</p>`; }
+  $('searchBtn').disabled = false;
+}
+$('searchBtn').onclick = search;
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+loadFiles();
+</script>
+</body>
+</html>
