@@ -1,7 +1,13 @@
-"""Document retrieval: find the chunks most relevant to a question.
+"""
+retrieval.py
+============
+Document retrieval: surface the most relevant chunks for a query.
 
 Cross-format aware — results may come from PDFs, spreadsheets,
 presentations, images, or audio transcripts.
+
+This module re-exports everything from semantic_search.py so callers
+only need to import from one place.
 """
 
 from __future__ import annotations
@@ -12,20 +18,43 @@ from typing import TypedDict
 from django.conf import settings
 
 from .rag import get_vectorstore
+from .semantic_search import (
+    SemanticChunk,
+    semantic_search,
+    group_by_format,
+    build_context_string,
+    FORMAT_COLORS,
+)
+
+# ── Re-export public symbols ──────────────────────────────────────────────────
+__all__ = [
+    "retrieve_chunks",
+    "retrieve_context",
+    "SemanticChunk",
+    "semantic_search",
+    "group_by_format",
+    "build_context_string",
+    "FORMAT_COLORS",
+]
 
 
 class Chunk(TypedDict):
+    """Legacy type kept for backward compatibility."""
     text: str
     source: str
     doc_id: str
     chunk_index: int
-    format: str       # "PDF", "Excel Spreadsheet", "Image (OCR)", etc.
+    format: str
     score: float
 
 
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Primary API — enhanced semantic retrieval
+# ─────────────────────────────────────────────────────────────────────────────
 
 def retrieve_chunks(
     query: str,
@@ -34,100 +63,69 @@ def retrieve_chunks(
     top_k: int | None = None,
     min_score: float | None = None,
     fetch_k: int | None = None,
-) -> list[Chunk]:
+    *,
+    # Enhancement flags (can be overridden per-call)
+    use_mmr: bool = True,
+    use_bm25: bool = True,
+    expand_context: bool = True,
+) -> list[SemanticChunk]:
     """
-    Return the best chunks for a query, highest score first.
+    Retrieve semantically relevant chunks from ChromaDB.
 
-    Steps:
-      1. Pull `fetch_k` candidates from the vector store.
-         Optionally filter by doc_ids and/or formats.
-      2. Drop chunks below `min_score`.
-      3. Deduplicate identical passages.
-      4. Return top `top_k` results.
+    Uses:
+      • OllamaEmbeddings (nomic-embed-text) for vector similarity
+      • BM25 keyword re-scoring for precise term matching
+      • MMR for result diversity
+      • Adjacent-chunk context expansion
 
     Args:
-        query:    Natural-language question or keywords.
-        doc_ids:  Optional list of doc IDs to restrict search to.
-        formats:  Optional list of format labels ("PDF", "CSV", etc.) to restrict to.
-        top_k:    Maximum results to return. Defaults to RAG_TOP_K setting.
-        min_score: Minimum cosine-similarity score (0–1). Defaults to RAG_MIN_SCORE.
-        fetch_k:   Candidates to fetch before filtering. Defaults to 4× top_k.
+        query:          Natural-language question or keywords.
+        doc_ids:        Restrict to specific document IDs (optional).
+        formats:        Restrict to specific format labels (optional).
+        top_k:          Max results to return (default: settings.RAG_TOP_K).
+        min_score:      Minimum vector similarity to include (default: settings.RAG_MIN_SCORE).
+        fetch_k:        Candidates fetched before re-ranking.
+        use_mmr:        Enable Maximal Marginal Relevance diversification.
+        use_bm25:       Enable BM25 keyword boost in final scoring.
+        expand_context: Merge adjacent chunks for richer context.
 
     Returns:
-        List of Chunk TypedDicts sorted by descending relevance score.
+        List of SemanticChunk dicts sorted by final_score descending.
+        Each chunk includes: text, context, source, doc_id, chunk_index,
+        format, format_color, vector_score, bm25_score, final_score.
     """
-    query = (query or "").strip()
-    if not query:
-        return []
+    return semantic_search(
+        query=query,
+        doc_ids=doc_ids,
+        formats=formats,
+        top_k=top_k,
+        min_score=min_score,
+        fetch_k=fetch_k,
+        mmr_lambda=0.65 if use_mmr else 1.0,     # λ=1 → pure relevance (no MMR diversity)
+        bm25_weight=0.25 if use_bm25 else 0.0,
+        expand_context=expand_context,
+        context_window=1,
+    )
 
-    cfg_top_k    = getattr(settings, "RAG_TOP_K", 6)
-    cfg_min_score = getattr(settings, "RAG_MIN_SCORE", 0.20)
-    cfg_fetch_k  = getattr(settings, "RAG_FETCH_K", cfg_top_k * 4)
 
-    top_k    = top_k    if top_k    is not None else cfg_top_k
-    min_score = min_score if min_score is not None else cfg_min_score
-    fetch_k  = fetch_k  if fetch_k  is not None else cfg_fetch_k
+def retrieve_context(
+    query: str,
+    doc_ids: list[str] | None = None,
+    formats: list[str] | None = None,
+    top_k: int | None = None,
+) -> str:
+    """
+    Convenience wrapper: retrieve relevant chunks and return a single
+    formatted context string ready to inject into an LLM prompt.
 
-    vs = get_vectorstore()
-
-    # ── Build optional ChromaDB where-filter ─────────────────────────────────
-    where: dict | None = None
-    conditions: list[dict] = []
-
-    if doc_ids:
-        str_ids = [str(d) for d in doc_ids]
-        conditions.append(
-            {"doc_id": {"$in": str_ids}}
-            if len(str_ids) > 1 else
-            {"doc_id": str_ids[0]}
-        )
-
-    if formats:
-        conditions.append(
-            {"format": {"$in": formats}}
-            if len(formats) > 1 else
-            {"format": formats[0]}
-        )
-
-    if len(conditions) == 1:
-        where = conditions[0]
-    elif len(conditions) > 1:
-        where = {"$and": conditions}
-
-    # ── Similarity search with relevance scores ───────────────────────────────
-    kwargs: dict = {"k": fetch_k}
-    if where:
-        kwargs["filter"] = where
-
-    try:
-        raw = vs.similarity_search_with_relevance_scores(query, **kwargs)
-    except Exception:
-        raw = []
-
-    # ── Filter, deduplicate, rank ─────────────────────────────────────────────
-    seen: set[str] = set()
-    results: list[Chunk] = []
-
-    for doc, score in raw:
-        if score < min_score:
-            continue
-        key = _normalize(doc.page_content)
-        if key in seen:
-            continue
-        seen.add(key)
-
-        meta = doc.metadata
-        results.append(
-            Chunk(
-                text=doc.page_content,
-                source=meta.get("source", ""),
-                doc_id=meta.get("doc_id", ""),
-                chunk_index=meta.get("chunk_index", 0),
-                format=meta.get("format", "Unknown"),
-                score=round(float(score), 4),
-            )
-        )
-
-    # sort highest score first
-    results.sort(key=lambda c: c["score"], reverse=True)
-    return results[:top_k]
+    Returns:
+        Multi-block text string with headers:
+        "[Source N: filename | format | score=X]\nchunk text\n"
+    """
+    chunks = retrieve_chunks(
+        query=query,
+        doc_ids=doc_ids,
+        formats=formats,
+        top_k=top_k,
+    )
+    return build_context_string(chunks)

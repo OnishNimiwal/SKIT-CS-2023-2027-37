@@ -1,25 +1,27 @@
 """
-search_views.py  —  Unified cross-format search endpoint.
+search_views.py — Unified cross-format semantic search endpoint.
 
-GET/POST /api/documents/search/
-    query   (str, required)    — the search query
-    formats (str, optional)    — comma-separated format filter, e.g. "PDF,CSV"
-    doc_ids (str, optional)    — comma-separated doc ID filter
-    top_k   (int, optional)    — max results (default 10)
+GET  /api/documents/search/?q=...&formats=PDF,CSV&top_k=10
+POST /api/documents/search/  {"query": "...", "formats": "PDF,CSV"}
 
-Response JSON:
+Response:
     {
       "query": "...",
       "total": 4,
+      "filters_applied": {"formats": [...], "doc_ids": [...]},
       "results": [
         {
-          "text":       "...",
-          "source":     "report.pdf",
-          "doc_id":     "42",
-          "chunk_index": 3,
-          "format":     "PDF",
-          "format_color": "#ef4444",
-          "score":      0.8712
+          "text":          "...",
+          "context":       "...",       # expanded text (may be wider than text)
+          "source":        "report.pdf",
+          "doc_id":        "42",
+          "chunk_index":   3,
+          "format":        "PDF",
+          "format_color":  "#ef4444",
+          "vector_score":  0.8900,
+          "bm25_score":    0.4200,
+          "final_score":   0.8125,
+          "score":         0.8125       # alias of final_score for compatibility
         },
         ...
       ]
@@ -32,35 +34,21 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from chat.retrieval import retrieve_chunks
-
-
-# Format → badge colour mapping (returned so the frontend can render badges)
-FORMAT_COLORS: dict[str, str] = {
-    "PDF":               "#ef4444",   # red
-    "Word Document":     "#3b82f6",   # blue
-    "Text":              "#64748b",   # slate
-    "Markdown":          "#8b5cf6",   # violet
-    "Excel Spreadsheet": "#22c55e",   # green
-    "CSV":               "#10b981",   # emerald
-    "TSV":               "#14b8a6",   # teal
-    "PowerPoint":        "#f97316",   # orange
-    "Image (OCR)":       "#f59e0b",   # amber
-    "Audio Transcript":  "#6366f1",   # indigo
-    "Unknown":           "#94a3b8",   # grey
-}
+from chat.retrieval import retrieve_chunks, FORMAT_COLORS
 
 
 class UnifiedSearchView(APIView):
     """
     Semantic search across ALL indexed documents regardless of format.
-    Results are ranked by cosine-similarity score and include format metadata.
+
+    Results are ranked by a combined vector-similarity + BM25 score and
+    include format metadata so the frontend can render coloured badges.
     """
 
     def _parse_params(self, request: Request) -> dict:
-        # Support both GET (query params) and POST (body)
         data = request.data if request.method == "POST" else request.query_params
 
+        # Accept both "query" and "q" aliases
         query = (data.get("query") or data.get("q") or "").strip()
 
         formats_raw = (data.get("formats") or "").strip()
@@ -71,20 +59,20 @@ class UnifiedSearchView(APIView):
 
         try:
             top_k = int(data.get("top_k", 10))
-            top_k = max(1, min(top_k, 50))  # clamp 1..50
+            top_k = max(1, min(top_k, 50))
         except (TypeError, ValueError):
             top_k = 10
 
         return {
-            "query": query,
+            "query":   query,
             "formats": formats,
             "doc_ids": doc_ids,
-            "top_k": top_k,
+            "top_k":   top_k,
         }
 
     def _handle(self, request: Request) -> Response:
         params = self._parse_params(request)
-        query = params["query"]
+        query  = params["query"]
 
         if not query:
             return Response(
@@ -99,13 +87,14 @@ class UnifiedSearchView(APIView):
             top_k=params["top_k"],
         )
 
-        # Enrich results with format colour for UI badges
+        # Enrich results with format colour + backward-compat "score" alias
         enriched = []
         for chunk in chunks:
             fmt = chunk.get("format", "Unknown")
             enriched.append({
                 **chunk,
                 "format_color": FORMAT_COLORS.get(fmt, FORMAT_COLORS["Unknown"]),
+                "score": chunk.get("final_score", chunk.get("score", 0.0)),
             })
 
         return Response({
