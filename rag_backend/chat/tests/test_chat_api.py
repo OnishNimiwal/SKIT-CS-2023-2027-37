@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .services import ask_ollama
+from ..services import ask_ollama
 
 
 class ChatAPITests(APITestCase):

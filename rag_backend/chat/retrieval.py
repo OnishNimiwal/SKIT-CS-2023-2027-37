@@ -94,7 +94,7 @@ def retrieve_chunks(
         Each chunk includes: text, context, source, doc_id, chunk_index,
         format, format_color, vector_score, bm25_score, final_score.
     """
-    return semantic_search(
+    chunks = semantic_search(
         query=query,
         doc_ids=doc_ids,
         formats=formats,
@@ -106,6 +106,12 @@ def retrieve_chunks(
         expand_context=expand_context,
         context_window=1,
     )
+    # Keep the field names the LangGraph flow reads (graph.py, grading.py):
+    # "chunk" = chunk_index, "score" = vector similarity (what RAG_GOOD_SCORE is tuned for).
+    for c in chunks:
+        c.setdefault("chunk", c.get("chunk_index"))
+        c.setdefault("score", c.get("vector_score"))
+    return chunks
 
 
 def retrieve_context(

@@ -9,11 +9,11 @@ from .retrieval import retrieve_chunks
 def _doc(text, source="a.pdf", doc_id="1", chunk=0):
     return Document(
         page_content=text,
-        metadata={"source": source, "doc_id": doc_id, "chunk": chunk},
+        metadata={"source": source, "doc_id": doc_id, "chunk_index": chunk},  # key written by rag.py
     )
 
 
-@patch("chat.retrieval.get_vectorstore")
+@patch("chat.semantic_search.get_vectorstore")  # retrieve_chunks() delegates to semantic_search()
 class RetrieveChunksTests(SimpleTestCase):
     def test_filters_low_scores(self, mock_store):
         mock_store.return_value.similarity_search_with_relevance_scores.return_value = [
@@ -55,7 +55,6 @@ class RetrieveChunksTests(SimpleTestCase):
             (_doc("text", source="r.pdf", doc_id="7", chunk=3), 0.91234),
         ]
         out = retrieve_chunks("q", top_k=4, min_score=0.3, fetch_k=8)
-        self.assertEqual(
-            out[0],
-            {"text": "text", "source": "r.pdf", "doc_id": "7", "chunk": 3, "score": 0.9123},
-        )
+        expected = {"text": "text", "source": "r.pdf", "doc_id": "7", "chunk": 3, "score": 0.9123}
+        # semantic_search adds more fields (format, bm25/final scores); the graph relies on these.
+        self.assertEqual({k: out[0][k] for k in expected}, expected)
