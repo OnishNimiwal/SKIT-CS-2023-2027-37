@@ -38,6 +38,7 @@ def get_llm() -> ChatOllama:
         model=settings.OLLAMA_MODEL,
         base_url=settings.OLLAMA_URL,   # local Ollama only
         temperature=0.2,
+        reasoning=getattr(settings, "OLLAMA_THINK", False),  # Qwen3 thinking off by default (speed)
         client_kwargs={"timeout": 120},
     )
 

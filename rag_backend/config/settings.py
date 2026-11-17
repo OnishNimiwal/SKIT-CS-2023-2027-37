@@ -144,6 +144,10 @@ ALLOW_EXTERNAL_AI = os.getenv('ALLOW_EXTERNAL_AI', 'False').lower() in ('true', 
 
 # RAG configuration
 OLLAMA_EMBED_MODEL = os.getenv('OLLAMA_EMBED_MODEL', 'nomic-embed-text')
+# Qwen3 "thinking" (same switch as the main app's .env): "false" = answer directly (much faster),
+# "true" = step-by-step reasoning, empty = model default.
+_think = os.getenv('OLLAMA_THINK', 'false').strip().lower()
+OLLAMA_THINK = {'true': True, '1': True, 'yes': True, 'false': False, '0': False, 'no': False}.get(_think)
 VECTOR_DB_DIR = BASE_DIR / 'vector_db'
 RAG_TOP_K = int(os.getenv('RAG_TOP_K', '4'))
 RAG_MIN_SCORE = float(os.getenv('RAG_MIN_SCORE', '0.3'))
